@@ -1,0 +1,17 @@
+{
+  "name": "pulse",
+  "private": true,
+  "packageManager": "pnpm@10.34.9",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "validate:targets": "pnpm --filter @pulse/core validate:targets",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

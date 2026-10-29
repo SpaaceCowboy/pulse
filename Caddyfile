@@ -1,0 +1,6 @@
+# SITE_ADDRESS=:80 locally; set to the real hostname on the core VPS for automatic TLS.
+{$SITE_ADDRESS::80} {
+	encode gzip
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy web:3000
+}

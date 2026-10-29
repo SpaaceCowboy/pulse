@@ -1,0 +1,111 @@
+# Pulse target registry — source of truth, synced to Postgres on boot.
+# No secrets here (tokens/passwords live in .env). Every target MUST set `audience: roco | admin`.
+# URLs/keywords are the starting list from docs/PLAN.md — confirm before Phase 1.
+# Vantage names: core = 217.60.38.195 (main stack), hostvds = 95.182.96.28 (probe-only, Phase 4).
+
+targets:
+  - id: roco-client-portal
+    name: client.rocobroker.ir (client portal)
+    group: Roco Broker
+    audience: roco
+    host: 89.46.217.245
+    tags: [roco, portal]
+    checks:
+      - kind: http
+        vantage: [core, hostvds]
+        config: { url: "https://client.rocobroker.ir/", keyword: "login" }
+      - kind: tls
+        config: { host: client.rocobroker.ir, port: 443 }
+      - kind: domain
+        config: { domain: rocobroker.ir }
+
+  - id: roco-main-site
+    name: rocobroker.com (main site)
+    group: Roco Broker
+    audience: roco
+    host: 89.46.217.221
+    tags: [roco, website]
+    checks:
+      - kind: http
+        vantage: [core, hostvds]
+        config: { url: "https://rocobroker.com/", expect_status: 200 }
+      - kind: tls
+        config: { host: rocobroker.com, port: 443 }
+      - kind: domain
+        config: { domain: rocobroker.com }
+      - kind: dns
+        config: { name: rocobroker.com, type: A }
+
+  - id: roco-seo-agents
+    name: roco-seo agents
+    group: Roco Broker
+    audience: roco
+    host: 31.57.24.70
+    tags: [roco, agents]
+    note: Heartbeat per scheduled run; /health URL to be confirmed.
+    checks:
+      - kind: heartbeat
+        config: { grace_s: 3600 }
+
+  - id: roco-email
+    name: Roco email (SPF/DKIM/DMARC, SMTP)
+    group: Roco Broker
+    audience: roco
+    tags: [roco, email]
+    note: LiquidWeb + providers. Expected DNS values and mail hostname to be confirmed.
+    checks:
+      - kind: dns
+        config: { name: rocobroker.com, type: TXT, contains: "v=spf1" }
+      - kind: dns
+        config: { name: _dmarc.rocobroker.com, type: TXT, contains: "v=DMARC1" }
+      - kind: smtp
+        config: { host: mail.rocobroker.com, port: 587 }
+
+  - id: termspace
+    name: termspace site
+    group: Personal & client projects
+    audience: admin
+    tags: [personal, nextjs]
+    note: Host not decided yet (open question in PLAN.md) — checks added once deployed; URLs below are placeholders.
+    checks:
+      - kind: http
+        config: { url: "https://termspace.example/ar" }
+      - kind: http
+        config: { url: "https://termspace.example/en" }
+      - kind: http
+        config: { url: "https://termspace.example/fa" }
+
+  - id: hostvds-vps
+    name: HostVDS VPS
+    group: Infrastructure
+    audience: admin
+    host: 95.182.96.28
+    tags: [vps, debian, proxy]
+    note: Checks nginx + TLS on the WebSocket path, not just the port (earlier nginx incident).
+    checks:
+      - kind: tcp
+        config: { host: 95.182.96.28, port: 22 }
+      - kind: agent
+        config: { units: [nginx, xray] }
+
+  - id: ubuntu-vps-shared
+    name: Ubuntu VPS (shared)
+    group: Infrastructure
+    audience: roco
+    tags: [vps, ubuntu, docker]
+    note: Shared with teammate; host/IP to be confirmed.
+    checks:
+      - kind: agent
+        config: { containers: true }
+
+  - id: cpanel-alma
+    name: AlmaLinux cPanel server
+    group: Infrastructure
+    audience: roco
+    tags: [cpanel, almalinux]
+    note: Hostname to be confirmed.
+    checks:
+      - kind: http
+        config: { url: "https://cpanel.example/" }
+      - kind: tls
+        config: { host: cpanel.example, port: 443 }
