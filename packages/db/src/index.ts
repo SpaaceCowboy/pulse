@@ -1,2 +1,5 @@
 export * from './schema'
 export * from './client'
+export * from './migrate'
+export * from './store'
+export * from './testing'

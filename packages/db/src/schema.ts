@@ -1,5 +1,6 @@
-// Table shapes from docs/PLAN.md "Data model". Migrations, monthly partitioning of
-// check_results and rollup jobs arrive in Phase 2.
+// Typed query layer for docs/PLAN.md "Data model". The DDL lives in migrations/ (hand-written
+// up/down SQL): check_results is month-partitioned there, which drizzle-kit cannot express.
+// db.test.ts fails if these column lists drift from the migrated database.
 import {
   bigserial,
   doublePrecision,
@@ -11,7 +12,9 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { isNull } from 'drizzle-orm'
 
 export const audienceEnum = pgEnum('audience', ['roco', 'admin'])
 export const roleEnum = pgEnum('role', ['ADMIN', 'USER'])
@@ -64,14 +67,21 @@ export const resultsHourly = pgTable(
   (t) => [primaryKey({ columns: [t.checkId, t.hour] })],
 )
 
-export const incidents = pgTable('incidents', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  checkId: text('check_id').notNull(),
-  openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
-  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-  cause: text('cause'),
-  lastMessage: text('last_message'),
-})
+export const incidents = pgTable(
+  'incidents',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    checkId: text('check_id').notNull(),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    cause: text('cause'),
+    lastMessage: text('last_message'),
+  },
+  (t) => [
+    uniqueIndex('incidents_one_open_per_check').on(t.checkId).where(isNull(t.resolvedAt)),
+    index('incidents_opened_at_idx').on(t.openedAt.desc()),
+  ],
+)
 
 export const heartbeats = pgTable('heartbeats', {
   token: text('token').primaryKey(),

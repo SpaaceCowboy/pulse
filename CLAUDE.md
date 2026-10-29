@@ -11,6 +11,8 @@ Self-hosted health-check dashboard. Full spec: `docs/PLAN.md` (source of truth).
 
 ## Commands
 - `pnpm install`, `pnpm typecheck`, `pnpm test`, `pnpm validate:targets`
+- `pnpm test:db` — also runs Postgres/Redis integration tests (needs `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis`)
+- `pnpm migrate up|down [n]|status` (needs `DATABASE_URL`); every migration in `packages/db/migrations/NNNN_name/` needs `up.sql` and `down.sql`
 - `docker compose up -d --build` (copy `.env.example` to `.env` first)
 
 ## Rules

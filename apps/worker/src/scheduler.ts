@@ -16,7 +16,7 @@ export function jitteredIntervalMs(intervalS: number, rand: () => number = Math.
 export interface SchedulerOptions {
   connection: Redis
   targets: Target[]
-  onResult?: (ref: CheckRef, result: Awaited<ReturnType<typeof runCheck>>) => void
+  onResult?: (ref: CheckRef, result: Awaited<ReturnType<typeof runCheck>>) => void | Promise<void>
   concurrency?: number
 }
 
@@ -49,7 +49,7 @@ export async function startScheduler(opts: SchedulerOptions) {
       if (!ref) return
       const result = await runCheck(ref)
       try {
-        opts.onResult?.(ref, result)
+        await opts.onResult?.(ref, result)
       } catch (err) {
         console.error(`onResult failed for ${ref.id}:`, err)
       }

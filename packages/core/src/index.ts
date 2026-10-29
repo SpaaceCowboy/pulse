@@ -1,4 +1,5 @@
 export * from './types'
 export * from './checkers'
+export * from './state/machine'
 export * from './targets/schema'
 export * from './targets/load'

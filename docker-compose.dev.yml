@@ -1,0 +1,9 @@
+# Local dev/test only: publishes Postgres and Redis on loopback for `pnpm test:db`.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5433:5432"
+  redis:
+    ports:
+      - "127.0.0.1:6380:6379"

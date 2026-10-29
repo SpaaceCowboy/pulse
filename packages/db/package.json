@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "migrate": "tsx src/migrate-cli.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.38.0",
@@ -14,6 +15,7 @@
   },
   "devDependencies": {
     "@types/pg": "^8.11.0",
-    "drizzle-kit": "^0.30.0"
+    "drizzle-kit": "^0.30.0",
+    "tsx": "^4.19.0"
   }
 }
