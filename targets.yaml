@@ -42,7 +42,11 @@ targets:
     audience: roco
     host: 31.57.24.70
     tags: [roco, agents]
-    note: Heartbeat per scheduled run; /health URL to be confirmed.
+    note: |
+      TODO (set at the end, once the API is exposed publicly): add http checks for
+      GET /health (liveness, 200 if the API responds) and GET /ready (readiness, 200 when DB and queue are ready).
+      Base URL not decided: https://scc.rocobroker.com is the Next.js frontend and returns 404 for both.
+      Heartbeat per scheduled run is Phase 4.
     checks:
       - kind: heartbeat
         config: { grace_s: 3600 }
@@ -59,7 +63,7 @@ targets:
       - kind: dns
         config: { name: _dmarc.rocobroker.com, type: TXT, contains: "v=DMARC1" }
       - kind: smtp
-        config: { host: mail.rocobroker.com, port: 587 }
+        config: { host: mail.rocobroker.com, port: 465, secure: true }
 
   - id: termspace
     name: termspace site
@@ -69,11 +73,11 @@ targets:
     note: Host not decided yet (open question in PLAN.md) — checks added once deployed; URLs below are placeholders.
     checks:
       - kind: http
-        config: { url: "https://termspace.example/ar" }
+        config: { url: "https://termspace.13.140.89.146.sslip.io/ar" }
       - kind: http
-        config: { url: "https://termspace.example/en" }
+        config: { url: "https://termspace.13.140.89.146.sslip.io/en" }
       - kind: http
-        config: { url: "https://termspace.example/fa" }
+        config: { url: "https://termspace.13.140.89.146.sslip.io/fa" }
 
   - id: hostvds-vps
     name: HostVDS VPS
@@ -103,9 +107,9 @@ targets:
     group: Infrastructure
     audience: roco
     tags: [cpanel, almalinux]
-    note: Hostname to be confirmed.
+    note: WHM on host1.rocobroker.com:2087 (same IP as mail.rocobroker.com).
     checks:
       - kind: http
-        config: { url: "https://cpanel.example/" }
+        config: { url: "https://host1.rocobroker.com:2087/" }
       - kind: tls
-        config: { host: cpanel.example, port: 443 }
+        config: { host: host1.rocobroker.com, port: 2087 }

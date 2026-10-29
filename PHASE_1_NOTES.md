@@ -24,8 +24,11 @@
 ## Known limits / carry-overs
 - Domain expiry lookups (RDAP / whois, `.ir` via whois.nic.ir:43) are slow or blocked from here and only return `degraded`. Real-server parsing is covered by sample-text tests only. Revisit from the core VPS in Phase 4; may need a longer per-check timeout (hard cap is 10 s).
 - `dns` cannot cancel an in-flight query; a timed-out lookup keeps running until it finishes. `expect` entries must be written without trailing dots (e.g. `10 mail.example.com`).
-- `mail.rocobroker.com:587` times out from both here and nowhere else tried; the hostname/port may be wrong or the port blocked. Confirm.
-- Still placeholders in `targets.yaml`: termspace URLs, cPanel host, roco-seo `/health`, shared Ubuntu VPS IP, login keyword. `pnpm check` marks `.example` hosts with `*`.
+- roco-seo `/health` (liveness) and `/ready` (readiness: DB + queue) are not exposed publicly yet (`scc.rocobroker.com` is the Next.js frontend and returns 404). Decision: add these checks at the end of the project; TODO note is in `targets.yaml`.
+- SMTP `mail.rocobroker.com` (MX host, same IP as cPanel) accepts TCP on 25/465/587 but sends no banner within 9 s from both the Windows host and Docker. Checker is correct; the server or its firewall is not greeting. Investigate server-side.
+- termspace `/ar` and `/en` return 404 on the sslip.io host; only `/fa` and `/` return 200.
+- cPanel checks now use `host1.rocobroker.com:2087/` (cert is for that name, not the IP).
+- Still unknown: shared Ubuntu VPS IP (agent check, Phase 5).
 - Jitter is per-check at registration, not per-run (BullMQ limitation).
 - Check results are only logged; storage, state machine and incidents are Phase 2.
 - Vault update skipped: nothing deployed.
