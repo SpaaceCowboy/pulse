@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { activeConfigSchemas, type ActiveKind } from '../checkers/config'
 
 export const CHECK_KINDS = [
   'http',
@@ -23,6 +24,16 @@ export const checkSchema = z
     config: z.record(z.unknown()).default({}),
   })
   .strict()
+  .superRefine((check, ctx) => {
+    // active kinds get strict per-kind validation; passive kinds (heartbeat/agent/queue) stay free-form until Phase 4/5
+    const schema = activeConfigSchemas[check.kind as ActiveKind]
+    if (!schema) return
+    const parsed = schema.safeParse(check.config)
+    if (parsed.success) return
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue({ ...issue, path: ['config', ...issue.path] })
+    }
+  })
 
 export const maintenanceSchema = z
   .object({

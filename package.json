@@ -6,6 +6,7 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
+    "check": "pnpm --filter @pulse/worker check --targets ../../targets.yaml",
     "validate:targets": "pnpm --filter @pulse/core validate:targets",
     "build": "pnpm -r build"
   },
