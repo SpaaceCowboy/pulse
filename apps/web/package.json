@@ -9,9 +9,16 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@pulse/core": "workspace:*",
+    "@pulse/db": "workspace:*",
+    "clsx": "^2.1.1",
+    "ioredis": "^5.11.1",
     "next": "^15.1.0",
+    "next-auth": "5.0.0-beta.32",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

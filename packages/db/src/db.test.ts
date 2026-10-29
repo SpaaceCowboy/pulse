@@ -16,6 +16,7 @@ import {
 } from './store'
 import { createTestDb, TEST_DATABASE_URL } from './testing'
 import { sql } from 'drizzle-orm'
+import { claimTotpStep, createUser, findUserByEmail, findUserByTokenHash, updateUser } from './users'
 
 const NOW = new Date('2026-10-29T12:30:00Z')
 
@@ -165,5 +166,20 @@ describe.skipIf(!TEST_DATABASE_URL)('postgres', () => {
     expect(out[0]).toMatchObject({ n: 5, p50: 200, p95: 400 })
     expect(out[0].up_ratio).toBeCloseTo(4 / 5)
     expect(out[0].hour.toISOString()).toBe(hour.toISOString())
+  })
+
+  it('users: create, case-insensitive lookup, token lookup, TOTP step claimed once', async () => {
+    const u = await createUser(t.db, { email: 'Admin@Example.com', passwordHash: 'h', totpSecret: 's', role: 'ADMIN' })
+    expect((await findUserByEmail(t.db, 'admin@example.COM'))?.id).toBe(u.id)
+    await expect(createUser(t.db, { email: 'admin@example.com', passwordHash: 'h', totpSecret: 's', role: 'USER' })).rejects.toThrow()
+
+    await updateUser(t.db, 'admin@example.com', { apiTokenHash: 'abc' })
+    expect((await findUserByTokenHash(t.db, 'abc'))?.email).toBe('admin@example.com')
+    expect(await findUserByTokenHash(t.db, 'nope')).toBeNull()
+
+    expect(await claimTotpStep(t.db, u.id, 100)).toBe(true)
+    expect(await claimTotpStep(t.db, u.id, 100)).toBe(false) // replay
+    expect(await claimTotpStep(t.db, u.id, 99)).toBe(false) // older
+    expect(await claimTotpStep(t.db, u.id, 101)).toBe(true)
   })
 })

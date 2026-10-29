@@ -6,6 +6,8 @@ COPY apps/web/package.json apps/web/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 RUN pnpm install --frozen-lockfile --filter @pulse/web...
+COPY packages/core packages/core
+COPY packages/db packages/db
 COPY apps/web apps/web
 RUN pnpm --filter @pulse/web build
 

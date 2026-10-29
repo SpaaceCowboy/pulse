@@ -2,7 +2,9 @@
   "name": "pulse",
   "private": true,
   "packageManager": "pnpm@10.34.9",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
@@ -10,10 +12,22 @@
     "migrate": "pnpm --filter @pulse/db migrate",
     "check": "pnpm --filter @pulse/worker check --targets ../../targets.yaml",
     "validate:targets": "pnpm --filter @pulse/core validate:targets",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "user": "pnpm --filter @pulse/db user",
+    "test:e2e": "tsx e2e/run.mts",
+    "lighthouse": "tsx e2e/lighthouse.mts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@pulse/core": "workspace:*",
+    "@pulse/db": "workspace:*",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "chrome-launcher": "^1.2.2",
+    "ioredis": "^6.0.0",
+    "lighthouse": "^13.6.0",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

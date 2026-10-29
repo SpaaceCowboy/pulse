@@ -5,3 +5,9 @@ coverage
 .env
 *.tsbuildinfo
 .turbo
+
+# e2e / lighthouse artefacts
+e2e/.auth/
+test-results/
+playwright-report/
+lighthouse-report.*

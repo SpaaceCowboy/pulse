@@ -57,7 +57,13 @@ export async function recordResult(
 
   await deps.store.set(checkId, {
     state,
-    last: { status: result.status, ts: now.getTime(), latencyMs: result.latencyMs, message: result.message },
+    last: {
+      status: result.status,
+      ts: now.getTime(),
+      latencyMs: result.latencyMs,
+      message: result.message,
+      daysLeft: typeof result.meta?.daysLeft === 'number' ? result.meta.daysLeft : undefined,
+    },
   })
   return { state, events }
 }

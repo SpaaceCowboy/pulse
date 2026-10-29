@@ -2,6 +2,7 @@
 // up/down SQL): check_results is month-partitioned there, which drizzle-kit cannot express.
 // db.test.ts fails if these column lists drift from the migrated database.
 import {
+  bigint,
   bigserial,
   doublePrecision,
   index,
@@ -124,4 +125,7 @@ export const users = pgTable('users', {
   totpSecret: text('totp_secret'),
   role: roleEnum('role').notNull(),
   telegramChatId: text('telegram_chat_id'),
+  apiTokenHash: text('api_token_hash').unique(),
+  totpLastStep: bigint('totp_last_step', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
