@@ -1,7 +1,9 @@
 # Pulse target registry — source of truth, synced to Postgres on boot.
 # No secrets here (tokens/passwords live in .env). Every target MUST set `audience: roco | admin`.
 # URLs/keywords are the starting list from docs/PLAN.md — confirm before Phase 1.
-# Vantage names: core = 217.60.38.195 (main stack), hostvds = 95.182.96.28 (probe-only, Phase 4).
+# Vantage names: core = 185.92.183.106 (main stack), hostvds = 95.182.96.28 (probe-only).
+# A check with no `vantage` runs on core only. `vantage: [hostvds]` means core never runs it, so until the probe
+# is deployed that check produces no results at all (and can neither open nor keep an incident open).
 
 targets:
   - id: roco-client-portal
@@ -63,21 +65,27 @@ targets:
       - kind: dns
         config: { name: _dmarc.rocobroker.com, type: TXT, contains: "v=DMARC1" }
       - kind: smtp
+        # Outbound 25/465/587 to mail.rocobroker.com all time out from the core VPS (verified 2026-11-01), so this
+        # check can only ever pass from the second vantage. It produces no results until the probe is deployed.
+        vantage: [hostvds]
         config: { host: mail.rocobroker.com, port: 465, secure: true }
 
   - id: termspace
-    name: termspace site
+    name: termspace.dev
     group: Personal & client projects
     audience: admin
     tags: [personal, nextjs]
-    note: Host not decided yet (open question in PLAN.md) — checks added once deployed; URLs below are placeholders.
+    note: |
+      Live at https://termspace.dev (VPS 31.57.92.100), moved off the retired sslip.io preview on 2026-11-01.
+      Arabic (/ar) is not published yet and English (/en) currently 404s, so neither is checked on purpose.
+      Re-add them when they return 200.
     checks:
       - kind: http
-        config: { url: "https://termspace.13.140.89.146.sslip.io/ar" }
+        config: { url: "https://termspace.dev/", keyword: "termspace" }
       - kind: http
-        config: { url: "https://termspace.13.140.89.146.sslip.io/en" }
-      - kind: http
-        config: { url: "https://termspace.13.140.89.146.sslip.io/fa" }
+        config: { url: "https://termspace.dev/fa" }
+      - kind: tls
+        config: { host: termspace.dev, port: 443 }
 
   - id: hostvds-vps
     name: HostVDS VPS
@@ -113,3 +121,17 @@ targets:
         config: { url: "https://host1.rocobroker.com:2087/" }
       - kind: tls
         config: { host: host1.rocobroker.com, port: 2087 }
+
+  - id: pulse-dashboard
+    name: pulse.termspace.dev (this dashboard)
+    group: Infrastructure
+    audience: admin
+    tags: [pulse, self]
+    note: |
+      Self-monitoring. The watchdog answers "is Pulse alive at all"; these checks catch what it cannot see --
+      Caddy, DNS and certificate problems, and an app that starts answering wrong on its own domain.
+    checks:
+      - kind: json
+        config: { url: "https://pulse.termspace.dev/api/healthz" }
+      - kind: tls
+        config: { host: pulse.termspace.dev, port: 443 }
