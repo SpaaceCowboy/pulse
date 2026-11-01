@@ -1,0 +1,40 @@
+# Registry for the alerts e2e suite (fixtures from e2e/fixture-server.mjs). Short intervals.
+# e2e-roco-site is checked from two vantages (core + the real probe process); e2e-shared-infra lists a second
+# vantage that the test itself plays (signed POSTs to /api/ingest), to simulate a blocked probe network.
+targets:
+  - id: e2e-roco-site
+    name: E2E Roco Site
+    group: Roco Broker
+    audience: roco
+    checks:
+      - kind: http
+        interval_s: 5
+        timeout_ms: 2000
+        vantage: [core, e2e-probe]
+        config: { url: "http://127.0.0.1:4101/" }
+  - id: e2e-shared-infra
+    name: E2E Shared Infra
+    group: Infrastructure
+    audience: roco
+    checks:
+      - kind: http
+        interval_s: 5
+        timeout_ms: 2000
+        vantage: [core, e2e-sim]
+        config: { url: "http://127.0.0.1:4103/" }
+  - id: e2e-admin-vps
+    name: E2E Admin Secret Proxy
+    group: Infrastructure
+    audience: admin
+    checks:
+      - kind: http
+        interval_s: 5
+        timeout_ms: 2000
+        config: { url: "http://127.0.0.1:4102/" }
+  - id: e2e-cron
+    name: E2E Nightly Job
+    group: Roco Broker
+    audience: roco
+    checks:
+      - kind: heartbeat
+        config: { grace_s: 600 }

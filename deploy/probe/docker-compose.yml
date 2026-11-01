@@ -1,0 +1,26 @@
+# Second vantage for HostVDS (95.182.96.28): the same worker image in PROBE_ONLY=1 mode. Stateless: no Postgres,
+# no Redis, no inbound ports. It runs the checks in targets.yaml whose `vantage` lists this probe and posts the
+# results, HMAC-signed, to the core's /api/ingest.
+#   cd <release dir>/deploy/probe && docker compose --env-file ./.env up -d --build
+services:
+  probe:
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+    image: pulse-probe:${PULSE_TAG:-latest}
+    environment:
+      PROBE_ONLY: "1"
+      PROBE_VANTAGE: ${PROBE_VANTAGE:-hostvds}
+      CORE_INGEST_URL: ${CORE_INGEST_URL:?set CORE_INGEST_URL, e.g. https://pulse.termspace.dev/api/ingest}
+      HMAC_INGEST_SECRET: ${HMAC_INGEST_SECRET:?set HMAC_INGEST_SECRET (same value as on the core)}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    restart: always
+    # no ports: outbound only

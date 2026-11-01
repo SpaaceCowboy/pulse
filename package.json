@@ -14,8 +14,10 @@
     "validate:targets": "pnpm --filter @pulse/core validate:targets",
     "build": "pnpm -r build",
     "user": "pnpm --filter @pulse/db user",
+    "user:dev": "node scripts/user-dev.mjs",
     "test:e2e": "tsx e2e/run.mts",
-    "lighthouse": "tsx e2e/lighthouse.mts"
+    "lighthouse": "tsx e2e/lighthouse.mts",
+    "heartbeat": "pnpm --filter @pulse/db heartbeat"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

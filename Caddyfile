@@ -1,6 +1,17 @@
-# SITE_ADDRESS=:80 locally; set to the real hostname on the core VPS for automatic TLS.
+# SITE_ADDRESS=:80 locally; set to the real hostname on the core VPS (pulse.termspace.dev) for automatic TLS.
 {$SITE_ADDRESS::80} {
 	encode gzip
-	header X-Robots-Tag "noindex, nofollow"
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	# ingest batches are <= 64 KB and heartbeat pings are empty: nothing legitimate is bigger than this
+	request_body {
+		max_size 256KB
+	}
 	reverse_proxy web:3000
 }

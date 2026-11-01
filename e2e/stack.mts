@@ -11,7 +11,7 @@ import { generateApiToken, generateTotpSecret, hashPassword } from '@pulse/core'
 import { execSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 import { Redis } from 'ioredis'
-import { PORT, STATE_FILE, type E2eState } from './env'
+import { E2E_HMAC_SECRET, PORT, STATE_FILE, type E2eState } from './env'
 
 const root = resolve(import.meta.dirname, '..')
 const env = Object.fromEntries(
@@ -41,7 +41,8 @@ async function waitFor(url: string, ms = 60_000) {
   throw new Error(`timeout waiting for ${url}`)
 }
 
-export async function up() {
+export async function up(suite: 'dashboard' | 'alerts' = 'dashboard') {
+  const alerts = suite === 'alerts'
   const user = env.POSTGRES_USER || 'pulse'
   const pass = encodeURIComponent(env.POSTGRES_PASSWORD ?? '')
   const base = `postgres://${user}:${pass}@127.0.0.1:5433`
@@ -69,19 +70,45 @@ export async function up() {
   await pool.end()
 
   const common = { DATABASE_URL: databaseUrl, REDIS_URL: redisUrl }
+  const alertEnv = {
+    ALERTS_ENABLED: 'true',
+    ALERTS_RECONCILE_MS: '2000',
+    TELEGRAM_BOT_TOKEN: 'e2etoken',
+    TELEGRAM_API_BASE: 'http://127.0.0.1:4110',
+    PUBLIC_URL: `http://127.0.0.1:${PORT}`,
+    HMAC_INGEST_SECRET: E2E_HMAC_SECRET,
+    WATCHDOG_URL: 'http://127.0.0.1:4110/watchdog',
+  }
   const procs = {
     fixtures: start('fixtures', 'node', ['e2e/fixture-server.mjs'], {}),
     worker: start('worker', 'pnpm', ['--filter', '@pulse/worker', 'start'], {
       ...common,
-      TARGETS_FILE: resolve(root, 'e2e/targets.e2e.yaml'),
+      TARGETS_FILE: resolve(root, alerts ? 'e2e/targets.alerts.e2e.yaml' : 'e2e/targets.e2e.yaml'),
+      ...(alerts ? alertEnv : {}),
     }),
     web: start('web', 'pnpm', ['--filter', '@pulse/web', 'exec', 'next', 'start', '-p', String(PORT), '-H', '127.0.0.1'], {
       ...common,
       AUTH_SECRET: randomBytes(32).toString('base64'),
+      HMAC_INGEST_SECRET: E2E_HMAC_SECRET,
       NODE_ENV: 'production',
     }),
   }
+  const extra: ChildProcess[] = []
+  if (alerts) {
+    extra.push(start('telegram', 'node', ['e2e/fake-telegram.mjs'], {}))
+    extra.push(
+      start('probe', 'pnpm', ['--filter', '@pulse/worker', 'start'], {
+        PROBE_ONLY: '1',
+        PROBE_VANTAGE: 'e2e-probe',
+        CORE_INGEST_URL: `http://127.0.0.1:${PORT}/api/ingest`,
+        HMAC_INGEST_SECRET: E2E_HMAC_SECRET,
+        TARGETS_FILE: resolve(root, 'e2e/targets.alerts.e2e.yaml'),
+        PORT: '3002',
+      }),
+    )
+  }
   await waitFor(`http://127.0.0.1:${PORT}/api/healthz`)
+  if (alerts) await waitFor('http://127.0.0.1:4110/__log')
   await waitFor('http://127.0.0.1:4101/')
 
   writeFileSync(
@@ -90,7 +117,7 @@ export async function up() {
       dbName,
       base,
       redisUrl,
-      pids: Object.values(procs).map((p) => p.pid),
+      pids: [...Object.values(procs), ...extra].map((p) => p.pid),
       accounts,
       tokens: { user: userToken.token, admin: adminToken.token },
     }),

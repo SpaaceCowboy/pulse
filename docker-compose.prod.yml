@@ -1,0 +1,39 @@
+# Production override for the core VPS:
+#   docker compose -p pulse -f docker-compose.yml -f docker-compose.prod.yml --env-file /opt/pulse/.env up -d
+# deploy/deploy.sh does this for you. Images are tagged with the release (PULSE_TAG) so a failed deploy can be
+# rolled back to the previous tag without rebuilding. Only Caddy publishes ports; Postgres and Redis stay on the
+# compose network.
+name: pulse
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    logging: *logging
+    restart: always
+
+  redis:
+    logging: *logging
+    restart: always
+
+  worker:
+    image: pulse-worker:${PULSE_TAG:-latest}
+    logging: *logging
+    restart: always
+    environment:
+      NODE_ENV: production
+
+  web:
+    image: pulse-web:${PULSE_TAG:-latest}
+    logging: *logging
+    restart: always
+
+  caddy:
+    logging: *logging
+    restart: always
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS (the dashboard hostname) in .env}

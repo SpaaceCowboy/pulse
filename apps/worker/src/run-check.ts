@@ -20,6 +20,9 @@ export interface CheckRef {
   timeoutMs: number
 }
 
+/** Where a check runs: targets.yaml `vantage`, default just the core worker. */
+export const checkVantages = (ref: Pick<CheckRef, 'check'>): string[] => ref.check.vantage ?? ['core']
+
 /** Passive kinds (heartbeat/agent/queue) are not polled here. */
 export function isActive(kind: string): kind is ActiveKind {
   return kind in activeConfigSchemas
@@ -63,4 +66,13 @@ export async function runCheck(ref: CheckRef, outerSignal?: AbortSignal): Promis
 /** Placeholder hosts from targets.yaml that must not count as real failures. */
 export function isPlaceholder(ref: CheckRef): boolean {
   return JSON.stringify(ref.check.config).includes('.example')
+}
+
+/** Heartbeat checks are not polled; the worker turns missed pings into results (heartbeat.ts). */
+export function listHeartbeatChecks(targets: Target[]): Array<{ id: string; target: Target; check: CheckDef }> {
+  return targets.flatMap((target) =>
+    target.checks.flatMap((check, i) =>
+      check.kind === 'heartbeat' ? [{ id: `${target.id}:${i}:heartbeat`, target, check }] : [],
+    ),
+  )
 }

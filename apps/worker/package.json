@@ -13,6 +13,10 @@
     "@pulse/db": "workspace:*",
     "bullmq": "^6.5.1",
     "ioredis": "^5.4.0",
+    "nodemailer": "^7.0.13",
     "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.2"
   }
 }

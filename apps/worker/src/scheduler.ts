@@ -1,7 +1,7 @@
 import { Queue, Worker } from 'bullmq'
 import type { Redis } from 'ioredis'
 import type { Target } from '@pulse/core'
-import { listChecks, runCheck, type CheckRef } from './run-check'
+import { checkVantages, listChecks, runCheck, type CheckRef } from './run-check'
 
 export const QUEUE_NAME = 'pulse-checks'
 export const CONCURRENCY = 10
@@ -18,6 +18,8 @@ export interface SchedulerOptions {
   targets: Target[]
   onResult?: (ref: CheckRef, result: Awaited<ReturnType<typeof runCheck>>) => void | Promise<void>
   concurrency?: number
+  /** only schedule checks that list this vantage (default: the core worker) */
+  vantage?: string
 }
 
 /**
@@ -27,7 +29,12 @@ export interface SchedulerOptions {
  * so a restart replaces rather than duplicates schedules.
  */
 export async function startScheduler(opts: SchedulerOptions) {
-  const refs = new Map(listChecks(opts.targets).map((r) => [r.id, r]))
+  const vantage = opts.vantage ?? 'core'
+  const refs = new Map(
+    listChecks(opts.targets)
+      .filter((r) => checkVantages(r).includes(vantage))
+      .map((r) => [r.id, r]),
+  )
   const queue = new Queue(QUEUE_NAME, { connection: opts.connection })
 
   // drop schedules for checks that no longer exist in targets.yaml

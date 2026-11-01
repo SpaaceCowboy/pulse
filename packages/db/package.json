@@ -8,7 +8,8 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "migrate": "tsx src/migrate-cli.ts",
-    "user": "tsx src/user-cli.ts"
+    "user": "tsx src/user-cli.ts",
+    "heartbeat": "tsx src/heartbeat-cli.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.38.0",

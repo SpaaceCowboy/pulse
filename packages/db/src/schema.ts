@@ -89,6 +89,31 @@ export const heartbeats = pgTable('heartbeats', {
   checkId: text('check_id').notNull(),
   lastPingAt: timestamp('last_ping_at', { withTimezone: true }),
   graceS: integer('grace_s').notNull(),
+  lastStatus: text('last_status'),
+  lastMessage: text('last_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const alertMessages = pgTable(
+  'alert_messages',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    incidentId: bigint('incident_id', { mode: 'number' }).notNull(),
+    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    channel: text('channel').notNull(),
+    chatId: text('chat_id'),
+    messageId: bigint('message_id', { mode: 'number' }),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedSentAt: timestamp('resolved_sent_at', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('alert_messages_incident_id_user_id_key').on(t.incidentId, t.userId)],
+)
+
+export const mutes = pgTable('mutes', {
+  targetId: text('target_id').primaryKey(),
+  until: timestamp('until', { withTimezone: true }).notNull(),
+  createdBy: bigint('created_by', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const hostMetrics = pgTable(

@@ -19,7 +19,7 @@ const files = walk(SRC)
 
 // Modules that can reach data. Only these files may import them.
 const DATA_IMPORT = /from\s+['"](@pulse\/db|ioredis|pg|drizzle-orm|@pulse\/core\/[^'"]*)['"]|\bloadTargets\b|\bparseTargets\b|targets\.yaml/
-const ALLOWED_DATA = new Set(['auth.ts', 'server/runtime.ts', 'server/status.ts', 'server/viewer.ts', 'server/rate-limit.ts'])
+const ALLOWED_DATA = new Set(['auth.ts', 'server/runtime.ts', 'server/status.ts', 'server/ingest.ts', 'server/viewer.ts', 'server/rate-limit.ts'])
 
 describe('data-access boundary', () => {
   it('only the server/ data modules and auth.ts import the db, redis or the targets loader', () => {
@@ -45,6 +45,13 @@ describe('data-access boundary', () => {
   })
 })
 
+// Machine routes: no viewer, authenticated by a secret token or an HMAC signature, and they may only write through
+// server/ingest.ts (checked below). Every other handler must resolve a viewer.
+const MACHINE_HANDLERS = new Map([
+  ['app/api/push/[token]/route.ts', /acceptPush\(/],
+  ['app/api/ingest/route.ts', /acceptProbeBatch\(/],
+])
+
 const PUBLIC_HANDLERS = new Set([
   'app/api/healthz/route.ts',
   'app/api/auth/[...nextauth]/route.ts',
@@ -54,7 +61,7 @@ const PUBLIC_HANDLERS = new Set([
 ])
 
 describe('every handler authenticates', () => {
-  const handlers = files.filter((f) => /^app\/.*\/?(route\.ts|page\.tsx)$/.test(f.path) && !PUBLIC_HANDLERS.has(f.path))
+  const handlers = files.filter((f) => /^app\/.*\/?(route\.ts|page\.tsx)$/.test(f.path) && !PUBLIC_HANDLERS.has(f.path) && !MACHINE_HANDLERS.has(f.path))
 
   it('there are handlers to check', () => {
     expect(handlers.map((h) => h.path)).toEqual(
@@ -64,6 +71,22 @@ describe('every handler authenticates', () => {
 
   it.each(handlers.map((h) => [h.path, h.text] as const))('%s resolves a viewer and reads data only via status.ts', (_path, text) => {
     expect(text).toMatch(/getViewer(FromRequest)?\(/)
-    expect(text).toMatch(/\b(getSnapshot|getTargetDetail|listIncidents)\(\s*(viewer|v)\b/)
+    expect(text).toMatch(/\b(getSnapshot|getTargetDetail|listIncidents|getTelegramLinkStatus)\(\s*(viewer|v)\b/)
+  })
+})
+
+describe('machine routes', () => {
+  it.each([...MACHINE_HANDLERS])('%s authenticates via server/ingest.ts and touches no data directly', (path, call) => {
+    const f = files.find((x) => x.path === path)!
+    expect(f, path).toBeDefined()
+    expect(f.text).toMatch(call)
+    expect(f.text).toMatch(/from '@\/server\/ingest'/)
+    expect(f.text).not.toMatch(DATA_IMPORT)
+  })
+
+  it('are exactly the machine routes the middleware lets through unauthenticated', () => {
+    const mw = files.find((x) => x.path === 'middleware.ts')!.text
+    expect(mw).toContain('api\/push')
+    expect(mw).toContain('api\/ingest')
   })
 })

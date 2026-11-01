@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/cn'
 import { signOut } from '@/auth'
 
-export function Header({ email, role, active }: { email: string; role: string; active: 'status' | 'incidents' }) {
+export function Header({ email, role, active }: { email: string; role: string; active: 'status' | 'incidents' | 'profile' }) {
   const tab = (on: boolean) =>
     cn('rounded-md px-3 py-1.5 text-sm', on ? 'bg-surface-2 text-fg' : 'text-muted hover:text-fg')
   return (
@@ -18,6 +18,13 @@ export function Header({ email, role, active }: { email: string; role: string; a
           aria-current={active === 'incidents' ? 'page' : undefined}
         >
           Incidents
+        </Link>
+        <Link
+          href="/profile"
+          className={tab(active === 'profile')}
+          aria-current={active === 'profile' ? 'page' : undefined}
+        >
+          Profile
         </Link>
       </nav>
       <form

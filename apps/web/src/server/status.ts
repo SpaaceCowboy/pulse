@@ -5,6 +5,7 @@
 // viewer may not see are never fetched, and Redis is only read for check ids of visible targets) and
 // again in JS with scopeTargets(viewer, ...) as a belt-and-braces filter.
 import 'server-only'
+import { createHash, randomBytes } from 'node:crypto'
 import { sql } from '@pulse/db'
 import { scopeTargets, visibleAudiences, type Viewer } from '@pulse/core'
 import { sortTargets } from '@/lib/diff'
@@ -45,7 +46,7 @@ type CheckRow = {
 /** `ARRAY['a','b']::text[]`; drizzle would expand a bare JS array into a comma list, not an array parameter. */
 const textArray = (values: string[]) => sql`ARRAY[${sql.join(values.map((v) => sql`${v}`), sql`, `)}]::text[]`
 
-const PASSIVE_KINDS = new Set(['heartbeat', 'agent', 'queue'])
+const PASSIVE_KINDS = new Set(['agent', 'queue'])
 
 async function visibleTargets(viewer: Viewer, onlyId?: string): Promise<TargetRow[]> {
   const audiences = visibleAudiences(viewer)
@@ -246,4 +247,38 @@ async function queryIncidents(viewer: Viewer, limit: number, targetId?: string):
 
 export async function listIncidents(viewer: Viewer, limit = 100): Promise<IncidentView[]> {
   return queryIncidents(viewer, Math.min(Math.max(limit, 1), 500))
+}
+
+// ---- Telegram linking (profile page). The worker bot consumes the code; see worker alerts/bot.ts. ----
+
+type ViewerWithId = Viewer & { id: number }
+const LINK_TTL_S = 600
+const LINK_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I
+const linkKey = (code: string) => `pulse:tg-link:${createHash('sha256').update(code.trim().toUpperCase()).digest('hex')}`
+const linkUserKey = (id: number) => `pulse:tg-link-user:${id}`
+
+export interface TelegramLinkStatus {
+  linked: boolean
+}
+
+export async function getTelegramLinkStatus(viewer: ViewerWithId): Promise<TelegramLinkStatus> {
+  const res = await getDb().execute<{ telegram_chat_id: string | null }>(
+    sql`SELECT telegram_chat_id FROM users WHERE id = ${viewer.id}`,
+  )
+  return { linked: Boolean(res.rows[0]?.telegram_chat_id) }
+}
+
+/** One live code per user (a new one replaces the old). Only the hash is stored, for 10 minutes. */
+export async function createTelegramLinkCode(viewer: ViewerWithId): Promise<{ code: string; expiresInS: number }> {
+  const redis = getRedis()
+  const code = Array.from(randomBytes(8), (b) => LINK_ALPHABET[b % LINK_ALPHABET.length]).join('')
+  const previous = await redis.get(linkUserKey(viewer.id))
+  if (previous) await redis.del(previous)
+  const key = linkKey(code)
+  await redis.multi().set(key, String(viewer.id), 'EX', LINK_TTL_S).set(linkUserKey(viewer.id), key, 'EX', LINK_TTL_S).exec()
+  return { code, expiresInS: LINK_TTL_S }
+}
+
+export async function unlinkTelegram(viewer: ViewerWithId): Promise<void> {
+  await getDb().execute(sql`UPDATE users SET telegram_chat_id = NULL WHERE id = ${viewer.id}`)
 }
