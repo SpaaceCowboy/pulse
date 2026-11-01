@@ -42,5 +42,24 @@
 - The user-owned uncommitted `user:dev` script (`package.json`, `scripts/user-dev.mjs`) is included in this commit because `package.json` also carries the new `heartbeat` script.
 - Per-IP rate limits use the first `X-Forwarded-For` value set by Caddy. Behind a proxied Cloudflare record all clients would share the edge IP, so the domain should be DNS-only.
 
-## Deployment status
-Code and tests are done. The deploy to the core VPS (31.59.120.14) is pending: `pulse.termspace.dev` still resolves to Cloudflare proxy addresses, and the record must be switched to DNS-only pointing at the VPS first (otherwise Caddy cannot obtain its certificate cleanly).
+## Deployment status (2026-11-01)
+Live at https://pulse.termspace.dev on **185.92.183.106** (Ubuntu 24.04, 1 vCPU / 2 GB / 2 GB swap). 31.59.120.14 was unreachable from the dev machine (no answer on any port), so this server replaced it.
+- Bootstrapped with `deploy/bootstrap.sh` (Docker 29, `deploy` user with key login, ufw 22/80/443, fail2ban, swap). Secrets in `/opt/pulse/.env` (mode 600) were generated on the server and never printed.
+- Release d7cac5d built and started; the deploy script reported failure because **Caddy's healthcheck requested `http://127.0.0.1/…`, which a real hostname redirects to HTTPS** (no certificate for an IP). Fixed in 7119deb (healthcheck uses Caddy's admin API) and redeployed: all 5 services healthy, `deploy.sh` reported "7119deb is live". The failure path itself was therefore exercised once (with no previous release, so no rollback).
+- Let's Encrypt certificate issued (valid to 2027-01-30). Verified from outside: HTTP -> HTTPS 308; `/`, `/profile` redirect to login; `/api/status.json`, `/api/incidents`, `/api/stream` 401; unknown push token 404; unsigned `/api/ingest` 401; HSTS, nosniff, frame-deny, noindex headers; migrations 0001-0003 applied.
+- The record had to be DNS-only (it first resolved to Cloudflare proxy addresses).
+- Nightly backup cron installed (03:17 UTC) and a first dump verified.
+- `.gitattributes` (`eol=lf`) added: `git archive` was emitting CRLF for the shell scripts because of `core.autocrlf`.
+
+## Still to do (needs you)
+1. Create the ADMIN account (interactive, so the password and TOTP secret stay out of chat logs); command below.
+2. Telegram: BotFather token -> `TELEGRAM_BOT_TOKEN` and `ALERTS_ENABLED=true` in `/opt/pulse/.env`, recreate the worker, link chats from Profile.
+3. Probe on HostVDS (`deploy/probe/`, same `HMAC_INGEST_SECRET` as `/opt/pulse/.env`); watchdog (`WATCHDOG_URL`); optional SMTP.
+4. Lock down SSH (disable root/password login) and rotate the root password that was shared in chat.
+5. Real-target findings from the new vantage: `termspace` checks fail with a certificate name mismatch (the sslip.io hostname), and `roco-email` SMTP 465 to mail.rocobroker.com times out from this VPS (outbound 465 is probably filtered; confirm with the provider or use 587).
+
+```bash
+ssh deploy@185.92.183.106
+cd /opt/pulse/current && set -a && . /opt/pulse/.env && set +a
+docker compose -p pulse -f docker-compose.yml -f docker-compose.prod.yml --env-file /opt/pulse/.env run --rm --no-deps   -e DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/$POSTGRES_DB" worker   pnpm --filter @pulse/db user create you@example.com --role ADMIN
+```
