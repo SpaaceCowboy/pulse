@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { alertsConfigFromEnv } from './config'
 import { parseCommand, resolveTarget } from './bot'
 import { formatDuration, parseDuration } from './duration'
-import { digestText, escapeHtml, incidentOpened, incidentResolved, toPlain } from './format'
+import { digestText, escapeHtml, incidentGroup, incidentOpened, incidentRemoved, incidentResolved, toPlain } from './format'
 import { TelegramClient, TelegramError } from './telegram'
 import { pingOnce } from './watchdog'
 import { heartbeatResult } from '../heartbeat'
@@ -211,5 +211,23 @@ describe('ALERTS_ENABLED=false', () => {
     await expect(
       startAlerts({ cfg: alertsConfigFromEnv({ ALERTS_ENABLED: 'true' }), db: {} as never, redis: {} as never, connection: {} as never, store: {} as never, targets: [], healthy: async () => true, lastResultAt: () => null, log: () => {} }),
     ).rejects.toThrow(/TELEGRAM_BOT_TOKEN/)
+  })
+})
+
+describe('group and removal messages', () => {
+  const at = (m: number) => new Date(Date.UTC(2026, 10, 16, 12, m))
+  const a = { targetName: 'A <x>', checkKind: 'http', cause: 'HTTP 500', openedAt: at(0) }
+  const b = { targetName: 'B', checkKind: 'tls', cause: null, openedAt: at(1) }
+  it('headline follows how many are still down, and values are escaped', () => {
+    expect(incidentGroup([a, b])).toContain('2 targets are DOWN')
+    expect(incidentGroup([{ ...a, resolvedAt: at(5) }, b])).toContain('1 of 2 targets still DOWN')
+    expect(incidentGroup([{ ...a, resolvedAt: at(5) }, { ...b, resolvedAt: at(6) }])).toContain('2 targets recovered')
+    expect(incidentGroup([a, b])).toContain('A &lt;x&gt;')
+    expect(incidentGroup([a, b])).not.toMatch(/\b\d+\.\d+\.\d+\.\d+\b/) // never shows a host/IP
+  })
+  it('removal text names the target and says why the message changed', () => {
+    const t = incidentRemoved({ ...a, resolvedAt: at(5) })
+    expect(t).toContain('A &lt;x&gt;')
+    expect(t).toContain('removed from monitoring')
   })
 })

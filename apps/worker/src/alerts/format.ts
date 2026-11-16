@@ -47,6 +47,36 @@ export function incidentResolved(i: IncidentText): string {
   )
 }
 
+/** Targets that went down together on one host share a single message. No IP/host is shown: USER accounts never see hosts. */
+export function incidentGroup(items: IncidentText[], url = ''): string {
+  const sorted = [...items].sort((a, b) => a.openedAt.getTime() - b.openedAt.getTime())
+  const open = sorted.filter((i) => !i.resolvedAt).length
+  const head =
+    open === sorted.length
+      ? `🔴 <b>${sorted.length} targets are DOWN</b> (same host)`
+      : open === 0
+        ? `✅ <b>${sorted.length} targets recovered</b> (same host)`
+        : `🟠 <b>${open} of ${sorted.length} targets still DOWN</b> (same host)`
+  const lines = sorted.map((i) =>
+    i.resolvedAt
+      ? `✅ <b>${escapeHtml(i.targetName)}</b> · ${escapeHtml(i.checkKind)} · recovered after ${formatDuration(i.resolvedAt.getTime() - i.openedAt.getTime())}`
+      : `🔴 <b>${escapeHtml(i.targetName)}</b> · ${escapeHtml(i.checkKind)} · since ${utc(i.openedAt)}` +
+        (i.cause ? ` · ${escapeHtml(clip(i.cause, 120))}` : ''),
+  )
+  return [head, ...lines].join('\n') + link(url)
+}
+
+/** The check left targets.yaml while its incident was open (see syncTargets). */
+export function incidentRemoved(i: IncidentText): string {
+  return (
+    `⚪ <b>${escapeHtml(i.targetName)}</b> was removed from monitoring while down\n` +
+    `Check: ${escapeHtml(i.checkKind)}\n` +
+    (i.cause ? `Was: ${escapeHtml(clip(i.cause))}\n` : '') +
+    `Opened: ${utc(i.openedAt)}` +
+    link(i.url ?? '')
+  )
+}
+
 export function degradedSustained(name: string, kind: string, message: string | undefined, url = ''): string {
   return (
     `🟠 <b>${escapeHtml(name)}</b> has been degraded for over 15 min\n` +

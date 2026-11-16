@@ -173,6 +173,136 @@ describe.skipIf(!TEST_DATABASE_URL || !REDIS_URL)('alerts', () => {
     })
   })
 
+  describe('host grouping and removed targets', () => {
+    const g = {
+      a: `ga-${tag}`, // same host as b and admin
+      b: `gb-${tag}`,
+      admin: `gc-${tag}`,
+      other: `gd-${tag}`, // different host
+      rm: `rm-${tag}`, // no host
+    }
+    const name = (k: keyof typeof g) => `Group ${k} ${tag}`
+    const chk = (k: keyof typeof g) => `${g[k]}:0:http`
+    const hostOf = (id: string) => (id === g.a || id === g.b || id === g.admin ? 'h1' : id === g.other ? 'h2' : undefined)
+    const mkT = (id: string, nm: string, audience: 'roco' | 'admin', checkId: string, vantage = ['core']) => ({
+      id,
+      name: nm,
+      group: 'g',
+      audience,
+      tags: [],
+      env: 'production',
+      checks: [{ id: checkId, kind: 'http', config: {}, intervalS: 60, timeoutMs: 5000, vantage }],
+    })
+    const base = () => [
+      mkT(ids.roco, ROCO_NAME, 'roco', rocoCheck, ['core', 'hostvds']),
+      mkT(ids.admin, ADMIN_NAME, 'admin', adminCheck),
+    ]
+    const extra = (without: Array<keyof typeof g> = []) =>
+      (['a', 'b', 'admin', 'other', 'rm'] as const)
+        .filter((k) => !without.includes(k))
+        .map((k) => mkT(g[k], name(k), k === 'admin' ? 'admin' : 'roco', chk(k)))
+    const open = (k: keyof typeof g, cause = 'HTTP 500') => openIncident(t.db, { checkId: chk(k), openedAt: new Date(), cause })
+    const close = (k: keyof typeof g) => closeIncident(t.db, chk(k), new Date())
+
+    afterAll(async () => {
+      await syncTargets(t.db, base()) // leave only the two shared targets for the other suites
+    })
+
+    it('targets on one host share one message that grows and is re-rendered as they recover', async () => {
+      await reset()
+      await syncTargets(t.db, [...base(), ...extra()])
+      const tg = new FakeTelegram()
+      const n = mkNotifier(tg, { hostOf })
+
+      await open('a')
+      expect(await n.reconcile()).toEqual({ sent: 2, resolved: 0 })
+      expect(tg.sent).toHaveLength(2) // ADMIN + USER
+      expect(tg.sent[0]!.text).toContain(name('a'))
+
+      await open('b') // a second target on the same host: no new page, the existing message is edited
+      expect(await n.reconcile()).toEqual({ sent: 2, resolved: 0 })
+      expect(tg.sent).toHaveLength(2)
+      expect(tg.edits).toHaveLength(2)
+      expect(tg.edits[0]!.text).toContain(name('a'))
+      expect(tg.edits[0]!.text).toContain(name('b'))
+      expect(tg.edits[0]!.text).toContain('2 targets are DOWN')
+      expect(tg.edits.every((e) => tg.sent.some((m) => m.id === e.id && m.chatId === e.chatId))).toBe(true)
+
+      await close('a')
+      expect(await n.reconcile()).toEqual({ sent: 0, resolved: 2 })
+      expect(tg.edits.at(-1)!.text).toContain('1 of 2 targets still DOWN')
+
+      await close('b')
+      expect(await n.reconcile()).toEqual({ sent: 0, resolved: 2 })
+      expect(tg.edits.at(-1)!.text).toContain('2 targets recovered')
+      expect(await n.reconcile()).toEqual({ sent: 0, resolved: 0 }) // settled
+      expect(tg.sent).toHaveLength(2)
+    })
+
+    it('two targets of one host that fail in the same tick go out as one message per user', async () => {
+      await reset()
+      await syncTargets(t.db, [...base(), ...extra()])
+      const tg = new FakeTelegram()
+      await open('a')
+      await open('b')
+      await mkNotifier(tg, { hostOf }).reconcile()
+      expect(tg.sent).toHaveLength(2)
+      for (const m of tg.sent) {
+        expect(m.text).toContain(name('a'))
+        expect(m.text).toContain(name('b'))
+      }
+    })
+
+    it('different hosts, and targets without a host, are never merged', async () => {
+      await reset()
+      await syncTargets(t.db, [...base(), ...extra()])
+      const tg = new FakeTelegram()
+      await open('a')
+      await open('other')
+      await open('rm')
+      await mkNotifier(tg, { hostOf }).reconcile()
+      expect(tg.sent).toHaveLength(6) // 3 incidents x 2 users
+    })
+
+    it('a USER never learns about an admin target through a host group', async () => {
+      await reset()
+      await syncTargets(t.db, [...base(), ...extra()])
+      const tg = new FakeTelegram()
+      const n = mkNotifier(tg, { hostOf })
+      await open('a')
+      await open('admin')
+      await n.reconcile()
+      expect(tg.to('200').map((m) => m.text).join('\n')).not.toContain(name('admin'))
+      expect(tg.to('100')[0]!.text).toContain(name('admin'))
+      expect(tg.to('100')[0]!.text).toContain(name('a'))
+
+      await close('admin')
+      await n.reconcile()
+      const userSaw = [...tg.to('200'), ...tg.edits.filter((e) => e.chatId === '200')].map((m) => m.text).join('\n')
+      expect(userSaw).not.toContain(name('admin'))
+    })
+
+    it('a target removed while down gets its message edited instead of staying on DOWN forever', async () => {
+      await reset()
+      await syncTargets(t.db, [...base(), ...extra()])
+      const tg = new FakeTelegram()
+      const n = mkNotifier(tg, { hostOf })
+      await open('rm')
+      await n.reconcile()
+      expect(tg.sent).toHaveLength(2)
+
+      await syncTargets(t.db, [...base(), ...extra(['rm'])]) // registry sync closes the incident of the removed check
+      expect(await n.reconcile()).toEqual({ sent: 0, resolved: 2 })
+      expect(tg.edits).toHaveLength(2)
+      for (const e of tg.edits) {
+        expect(e.text).toContain(name('rm'))
+        expect(e.text).toContain('removed from monitoring')
+      }
+      expect(await n.reconcile()).toEqual({ sent: 0, resolved: 0 })
+      expect(tg.edits).toHaveLength(2)
+    })
+  })
+
   describe('mutes and maintenance', () => {
     it('a muted target is not announced; unmuting announces a still-open incident', async () => {
       await reset()

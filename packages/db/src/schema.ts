@@ -105,6 +105,8 @@ export const alertMessages = pgTable(
     messageId: bigint('message_id', { mode: 'number' }),
     sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
     resolvedSentAt: timestamp('resolved_sent_at', { withTimezone: true }),
+    targetName: text('target_name'),
+    checkKind: text('check_kind'),
   },
   (t) => [uniqueIndex('alert_messages_incident_id_user_id_key').on(t.incidentId, t.userId)],
 )

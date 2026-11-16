@@ -85,12 +85,80 @@ export async function listAlertMessages(db: Db, incidentIds: number[]): Promise<
 
 export async function insertAlertMessage(
   db: Db,
-  m: { incidentId: number; userId: number; channel: 'telegram' | 'email'; chatId?: string | null; messageId?: number | null },
+  m: {
+    incidentId: number
+    userId: number
+    channel: 'telegram' | 'email'
+    chatId?: string | null
+    messageId?: number | null
+    targetName?: string | null
+    checkKind?: string | null
+  },
 ): Promise<void> {
   await db.execute(sql`
-    INSERT INTO alert_messages (incident_id, user_id, channel, chat_id, message_id)
-    VALUES (${m.incidentId}, ${m.userId}, ${m.channel}, ${m.chatId ?? null}, ${m.messageId ?? null})
+    INSERT INTO alert_messages (incident_id, user_id, channel, chat_id, message_id, target_name, check_kind)
+    VALUES (${m.incidentId}, ${m.userId}, ${m.channel}, ${m.chatId ?? null}, ${m.messageId ?? null},
+            ${m.targetName ?? null}, ${m.checkKind ?? null})
     ON CONFLICT (incident_id, user_id) DO NOTHING`)
+}
+
+export interface RemovedAlertMessage {
+  incidentId: number
+  userId: number
+  channel: 'telegram' | 'email'
+  chatId: string | null
+  messageId: number | null
+  checkId: string
+  targetName: string | null
+  checkKind: string | null
+  cause: string | null
+  openedAt: Date
+  resolvedAt: Date
+  /** another incident shares this Telegram message (a host group), so editing it alone would clobber the others */
+  shared: boolean
+}
+
+/** Resolved incidents whose check left the registry and whose message was never told (see syncTargets). */
+export async function listRemovedAlertMessages(db: Db, now: Date, resolvedWithinH = 24): Promise<RemovedAlertMessage[]> {
+  const since = new Date(now.getTime() - resolvedWithinH * 3_600_000).toISOString()
+  const res = await db.execute<{
+    incident_id: number
+    user_id: number
+    channel: 'telegram' | 'email'
+    chat_id: string | null
+    message_id: number | null
+    check_id: string
+    target_name: string | null
+    check_kind: string | null
+    cause: string | null
+    opened_at: Date
+    resolved_at: Date
+    shared: boolean
+  }>(sql`
+    SELECT am.incident_id, am.user_id, am.channel, am.chat_id, am.message_id, am.target_name, am.check_kind,
+           i.check_id, i.cause, i.opened_at, i.resolved_at,
+           (am.message_id IS NOT NULL AND
+            (SELECT count(*) FROM alert_messages x WHERE x.chat_id = am.chat_id AND x.message_id = am.message_id) > 1) AS shared
+    FROM alert_messages am
+    JOIN incidents i ON i.id = am.incident_id
+    WHERE i.resolved_at IS NOT NULL AND i.resolved_at >= ${since}::timestamptz
+      AND am.resolved_sent_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM checks c WHERE c.id = i.check_id)
+    ORDER BY am.incident_id, am.user_id`)
+  return res.rows.map((r) => ({
+    incidentId: Number(r.incident_id),
+    userId: Number(r.user_id),
+    channel: r.channel,
+    chatId: r.chat_id,
+    messageId: r.message_id == null ? null : Number(r.message_id),
+    checkId: r.check_id,
+    targetName: r.target_name,
+    checkKind: r.check_kind,
+    cause: r.cause,
+    openedAt: new Date(r.opened_at),
+    resolvedAt: new Date(r.resolved_at),
+    shared: r.shared,
+  }))
 }
 
 export async function markAlertResolved(db: Db, incidentId: number, userId: number, at: Date): Promise<void> {

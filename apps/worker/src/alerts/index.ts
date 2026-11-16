@@ -16,6 +16,12 @@ import { startWatchdog } from './watchdog'
 export const ALERTS_QUEUE = 'pulse-alerts'
 export const RECONCILE_INTERVAL_MS = 30_000
 
+/** targets.yaml `host` by target id; targets without one are never grouped. */
+export function hostResolver(targets: Target[]) {
+  const hosts = new Map(targets.flatMap((t) => (t.host ? [[t.id, t.host] as const] : [])))
+  return (targetId: string) => hosts.get(targetId)
+}
+
 export function maintenanceChecker(targets: Target[]) {
   const windows = new Map(
     targets.map((t) => [t.id, t.maintenance.map((m) => [Date.parse(m.start), Date.parse(m.end)] as const)]),
@@ -55,6 +61,7 @@ export async function startAlerts(d: AlertsDeps) {
     mailer,
     publicUrl: d.cfg.publicUrl,
     inMaintenance: maintenanceChecker(d.targets),
+    hostOf: hostResolver(d.targets),
     log,
   })
 
