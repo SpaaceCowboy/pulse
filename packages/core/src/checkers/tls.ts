@@ -1,3 +1,4 @@
+import { isIP } from 'node:net'
 import { connect, checkServerIdentity, type TLSSocket } from 'node:tls'
 import type { CheckResult, Checker } from '../types'
 import type { TlsConfig } from './config'
@@ -29,7 +30,9 @@ export const tlsChecker: Checker<TlsConfig> = {
       signal.addEventListener('abort', onAbort, { once: true })
 
       try {
-        socket = connect({ host: cfg.host, port: cfg.port, servername, rejectUnauthorized: false })
+        // Node rejects an IP as SNI (RFC 6066); the IP SAN is still verified below by checkServerIdentity.
+        const sni = isIP(servername) ? undefined : servername
+        socket = connect({ host: cfg.host, port: cfg.port, servername: sni, rejectUnauthorized: false })
       } catch (err) {
         return finish({ status: 'down', message: errMessage(err) })
       }

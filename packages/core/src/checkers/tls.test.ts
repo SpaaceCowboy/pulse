@@ -22,6 +22,13 @@ describe('tlsChecker', () => {
     expect(r.latencyMs).toBeGreaterThanOrEqual(0)
   })
 
+  it('IP host is checked against the IP SAN (no SNI)', async () => {
+    const f = await startTlsFixture('valid')
+    open.push(f)
+    const r = await tlsChecker.run({ host: '127.0.0.1', port: f.port, warn_days: 14 }, sig())
+    expect(r.status).toBe('up')
+  })
+
   it('expired cert is down', async () => {
     const f = await startTlsFixture('expired')
     open.push(f)
