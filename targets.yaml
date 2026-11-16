@@ -176,14 +176,3 @@ targets:
       - kind: tls
         id: tls
         config: { host: pulse.termspace.dev, port: 443 }
-
-  # TEMPORARY: end-to-end Telegram alert test (2026-11-16). Remove after the test.
-  - id: alert-test
-    name: alert test (temporary)
-    group: Infrastructure
-    audience: admin
-    tags: [test]
-    checks:
-      - kind: heartbeat
-        id: probe
-        config: { grace_s: 120 }
