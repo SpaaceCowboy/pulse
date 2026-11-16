@@ -13,12 +13,16 @@ import {
 export type CheckDef = Target['checks'][number]
 
 export interface CheckRef {
-  id: string // `${targetId}:${index}:${kind}`
+  id: string // see checkId()
   target: Target
   check: CheckDef
   intervalS: number
   timeoutMs: number
 }
+
+/** `<target>:<id>` when the check sets `id`, else positional `<target>:<index>:<kind>` (kept so old history survives). */
+export const checkId = (target: Target, check: CheckDef, index: number): string =>
+  check.id ? `${target.id}:${check.id}` : `${target.id}:${index}:${check.kind}`
 
 /** Where a check runs: targets.yaml `vantage`, default just the core worker. */
 export const checkVantages = (ref: Pick<CheckRef, 'check'>): string[] => ref.check.vantage ?? ['core']
@@ -34,7 +38,7 @@ export function listChecks(targets: Target[]): CheckRef[] {
       isActive(check.kind)
         ? [
             {
-              id: `${target.id}:${i}:${check.kind}`,
+              id: checkId(target, check, i),
               target,
               check,
               intervalS: check.interval_s ?? DEFAULT_INTERVAL_S[check.kind],
@@ -72,7 +76,7 @@ export function isPlaceholder(ref: CheckRef): boolean {
 export function listHeartbeatChecks(targets: Target[]): Array<{ id: string; target: Target; check: CheckDef }> {
   return targets.flatMap((target) =>
     target.checks.flatMap((check, i) =>
-      check.kind === 'heartbeat' ? [{ id: `${target.id}:${i}:heartbeat`, target, check }] : [],
+      check.kind === 'heartbeat' ? [{ id: checkId(target, check, i), target, check }] : [],
     ),
   )
 }

@@ -17,6 +17,9 @@ export const CHECK_KINDS = [
 export const checkSchema = z
   .object({
     kind: z.enum(CHECK_KINDS),
+    // Stable id (`<target>:<id>`). Without it the id is positional (`<target>:<index>:<kind>`), so reordering or
+    // removing a check gives it a new id and drops its history (and orphans a heartbeat's push token).
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'lowercase slug').optional(),
     interval_s: z.number().int().positive().optional(),
     timeout_ms: z.number().int().positive().max(10_000).optional(),
     vantage: z.array(z.string().min(1)).min(1).optional(),
@@ -58,6 +61,16 @@ export const targetSchema = z
     maintenance: z.array(maintenanceSchema).default([]),
   })
   .strict()
+  .superRefine((target, ctx) => {
+    const seen = new Set<string>()
+    target.checks.forEach((c, i) => {
+      if (!c.id) return
+      if (seen.has(c.id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['checks', i, 'id'], message: `duplicate check id "${c.id}"` })
+      }
+      seen.add(c.id)
+    })
+  })
 
 export const targetsFileSchema = z
   .object({

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Target } from '@pulse/core'
 import { DEFAULT_INTERVAL_S } from '@pulse/core'
 import { jitteredIntervalMs } from './scheduler'
-import { listChecks } from './run-check'
+import { listChecks, listHeartbeatChecks } from './run-check'
 
 describe('jitteredIntervalMs', () => {
   it('rand=0 gives 0.9x, rand=1 gives 1.1x, rand=0.5 gives 1x', () => {
@@ -43,5 +43,20 @@ describe('listChecks', () => {
     expect(refs[0]!.timeoutMs).toBe(10_000)
     expect(refs[1]!.timeoutMs).toBe(10_000)
     expect(refs[2]!.timeoutMs).toBe(2000)
+  })
+})
+
+describe('explicit check ids', () => {
+  const t = target([
+    { kind: 'http', id: 'home', config: { url: 'http://x' } },
+    { kind: 'heartbeat', id: 'ga4', config: {} },
+    { kind: 'tcp', config: { host: 'h', port: 1 } },
+  ])
+  it('uses <target>:<id> and survives reordering; unnamed checks stay positional', () => {
+    expect(listChecks([t]).map((r) => r.id)).toEqual(['t1:home', 't1:2:tcp'])
+    expect(listHeartbeatChecks([t]).map((h) => h.id)).toEqual(['t1:ga4'])
+    const reordered = target([...(t.checks as unknown[])].reverse())
+    expect(listChecks([reordered]).map((r) => r.id)).toContain('t1:home')
+    expect(listHeartbeatChecks([reordered]).map((h) => h.id)).toEqual(['t1:ga4'])
   })
 })

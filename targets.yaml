@@ -1,8 +1,9 @@
 # Pulse target registry — source of truth, synced to Postgres on boot.
 # No secrets here (tokens/passwords live in .env). Every target MUST set `audience: roco | admin`.
 # All checks run from core (185.92.183.106). There is no second vantage; the probe/ingest code stays but is unused.
-# Check ids are positional (`<target>:<index>:<kind>`): reordering or removing a check gives it a new id and drops
-# its history (and orphans a heartbeat's push token).
+# Check ids: a check with `id: x` is stored as `<target>:x` and is stable. Without `id` it is positional
+# (`<target>:<index>:<kind>`): reordering or removing such a check gives it a new id and drops its history (and
+# orphans a heartbeat's push token). Give every NEW check an `id`; existing ones keep theirs so history survives.
 
 targets:
   - id: roco-client-portal
@@ -138,3 +139,20 @@ targets:
     checks:
       - kind: http # follows the 308 to www
         config: { url: "https://midoripuzzle.com/", keyword: "Midori" }
+
+  - id: pulse-dashboard
+    name: pulse.termspace.dev (this dashboard)
+    group: Infrastructure
+    audience: admin
+    host: 185.92.183.106
+    tags: [pulse, self]
+    note: |
+      Self-monitoring. The watchdog answers "is Pulse alive at all"; these checks catch what it cannot see --
+      Caddy, DNS and certificate problems, and an app that starts answering wrong on its own domain.
+    checks:
+      - kind: json
+        id: healthz
+        config: { url: "https://pulse.termspace.dev/api/healthz" }
+      - kind: tls
+        id: tls
+        config: { host: pulse.termspace.dev, port: 443 }

@@ -3,6 +3,7 @@ import { loadTargets } from '@pulse/core'
 import { createDb, migrateUp, syncTargets } from '@pulse/db'
 import { Redis } from 'ioredis'
 import { alertsConfigFromEnv } from './alerts/config'
+import { createCoreOnline } from './canary'
 import { startAlerts } from './alerts'
 import { startHeartbeatEvaluator, HEARTBEAT_VANTAGE } from './heartbeat'
 import { startMaintenance } from './maintenance'
@@ -97,12 +98,19 @@ if (process.env.SCHEDULER_ENABLED !== 'false') {
     log,
   })
   const heartbeats = startHeartbeatEvaluator(deps)
+  const coreOnline = createCoreOnline()
   const scheduler = await startScheduler({
     connection: new Redis(env('REDIS_URL'), { maxRetriesPerRequest: null }),
     targets,
     onResult: async (ref, r) => {
       console.log(JSON.stringify({ check: ref.id, status: r.status, latencyMs: r.latencyMs, message: r.message }))
       if (!stored.has(ref.id)) return
+      // Core itself is cut off: this says nothing about the target. Drop it (no row, no state change) and do not
+      // advance lastResultAt, so the watchdog goes quiet and the external monitor reports "core offline".
+      if (r.status !== 'up' && !(await coreOnline())) {
+        log(`core offline: dropped ${r.status} result for ${ref.id}`)
+        return
+      }
       await recordResult(deps, ref.id, r, new Date(), {
         expected: checkVantages(refById.get(ref.id)!),
         staleAfterMs: Math.max(3 * ref.intervalS * 1000, 180_000),

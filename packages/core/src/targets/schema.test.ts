@@ -35,6 +35,17 @@ describe('targets schema', () => {
     expect(() => parseTargets(dup)).toThrow(/duplicate/)
   })
 
+  it('rejects a duplicate or malformed check id within a target', () => {
+    const two = (a: string, b: string) =>
+      base.replace(
+        '      - kind: http\n        config: { url: "https://example.com" }\n',
+        `      - kind: http\n        id: ${a}\n        config: { url: "https://example.com" }\n      - kind: http\n        id: ${b}\n        config: { url: "https://example.com" }\n`,
+      )
+    expect(parseTargets(two('x', 'y')).targets).toHaveLength(1)
+    expect(() => parseTargets(two('x', 'x'))).toThrow(/duplicate check id/)
+    expect(() => parseTargets(two('x', 'Bad:Id'))).toThrow()
+  })
+
   it('validates the real targets.yaml', () => {
     const file = loadTargets(resolve(__dirname, '../../../../targets.yaml'))
     expect(file.targets.every((t) => t.audience === 'roco' || t.audience === 'admin')).toBe(true)
