@@ -10,7 +10,7 @@ Build **Pulse** (working name): one self-hosted Next.js page that shows, for eve
 
 - External checks: HTTP(S) status + latency, keyword/JSON assertions, TLS expiry, domain expiry, DNS records, TCP ports, SMTP/IMAP banners
 - Push heartbeats: cron jobs and BullMQ workers ping Pulse; silence = down
-- Host agent on each VPS: CPU, RAM, disk, systemd units, Docker containers, recent error lines from journald/Docker
+- Host agent on each VPS: CPU, RAM, disk, systemd units, Docker containers, recent error lines from journald/Docker *(deferred: since 2026-11-16 no VPS is a monitored target, so Phase 5's agent work is parked)*
 - Error feed: the `errors` field of each app's `/health` endpoint plus agent log tails (no Sentry — none of the remaining targets use it)
 - Two roles: **ADMIN** (you) sees every target; **USER** (teammate) sees Roco targets only
 - History: 90-day uptime bars, latency sparkline, incident log
@@ -18,24 +18,27 @@ Build **Pulse** (working name): one self-hosted Next.js page that shows, for eve
 
 **Out of scope (v1)**: full log aggregation (Loki/ELK), APM tracing, public status page for clients, roles beyond ADMIN and USER, Sentry integration.
 
-**Constraint that shapes everything**: you're in Turkey and some targets sit behind Iranian or Cloudflare networks — checks must run from **at least two vantage points** (e.g. HostVDS VPS + a second VPS or Cloudflare Worker) so one network path failing isn't mistaken for an outage.
+**Constraint that shapes everything**: you're in Turkey and some targets sit behind Iranian or Cloudflare networks, which is why the original design used two vantage points. **Decision 2026-11-16: core only** (185.92.183.106). The probe/ingest code stays but is unused, and `HMAC_INGEST_SECRET` is unset on the server (`/api/ingest` answers 503). To compensate, a failing result is dropped, not recorded, while core cannot reach 1.1.1.1 / 8.8.8.8 on 443 (`apps/worker/src/canary.ts`), so a core network problem opens no incidents and the watchdog goes quiet instead.
 
 ## Target inventory
 
 The first build task is a `targets.yaml` registry; this is the starting list from known projects — confirm URLs and add anything missing before Phase 1.
 
-| Target | Host / platform | Checks | Error source | Visible to |
-| --- | --- | --- | --- | --- |
-| client.rocobroker.ir (client portal) | 89.46.217.245 · Ubuntu | HTTP + login page keyword, TLS, `.ir` domain expiry, from 2 vantage points | App `/health` | USER + ADMIN |
-| rocobroker.com (main site) | 89.46.217.221 · host1 | HTTP 200 + keyword, TLS, domain, DNS | App `/health` errors (added in Phase 5) | USER + ADMIN |
-| roco-seo agents | 31.57.24.70 · Ubuntu | Heartbeat per scheduled run, `/health` | App errors | USER + ADMIN |
-| Roco email (SPF/DKIM/DMARC, SMTP) | LiquidWeb + providers | DNS TXT assertions, SMTP banner on 587/465 | Bounce webhook (later) | USER + ADMIN |
-| termspace site | Next.js, host not decided | HTTP for `/ar`, `/en`, `/fa`, TLS | — | ADMIN only |
-| HostVDS VPS (95.182.96.28) | Debian | Host agent, SSH port, Xray/V2Ray unit, nginx unit, TLS on WS endpoint | journald | ADMIN only |
-| Ubuntu VPS (shared with teammate) | Ubuntu | Host agent, Docker containers | journald / Docker | USER + ADMIN |
-| AlmaLinux cPanel server | cPanel | HTTP, TLS, disk via cPanel API or agent | cPanel error log | USER + ADMIN |
+| Target | Host / platform | Checks | Visible to |
+| --- | --- | --- | --- |
+| client.rocobroker.ir (client portal) | 89.46.217.245 | HTTP + `login` keyword, TLS | USER + ADMIN |
+| rocobroker.com (main site, Next.js) | 89.46.217.221 | HTTP + `ROCO Broker` keyword, TLS, DNS A | USER + ADMIN |
+| rocobroker.ir (Next.js) | 89.46.217.221 | HTTP + keyword, TLS | USER + ADMIN |
+| blog.rocobroker.com (WordPress) | 65.109.215.58 | HTTP + keyword, TLS, `/wp-json/` (boots WordPress + DB) | USER + ADMIN |
+| roco-seo agents | 65.109.212.227 | one heartbeat per job: `gsc` (daily 04:15 UTC), `ga4` (daily 04:45 UTC), `pagespeed` (Mon 05:15 UTC); API `/health` + `/ready` once exposed | USER + ADMIN |
+| Roco email | LiquidWeb + Mailgun | DNS: SPF, DMARC, MX, DKIM (`default`, `k1`). No SMTP check: core cannot reach mail ports | USER + ADMIN |
+| termspace.dev | 95.182.96.28 | HTTP `/` + `/fa`, TLS | ADMIN only |
+| Midori backend | 13.140.89.146 | JSON `/health`, TLS (Let's Encrypt short-lived IP cert, warn at 2 days) | ADMIN only |
+| cp.midoripuzzle.com | 13.140.89.146 | HTTP + keyword, TLS | ADMIN only |
+| midoripuzzle.com (Vercel) | Vercel | HTTP + keyword | ADMIN only |
+| pulse.termspace.dev (this dashboard) | 185.92.183.106 | JSON `/api/healthz`, TLS | ADMIN only |
 
-The V2Ray row deliberately checks **nginx + TLS on the WebSocket path**, not just the port — the earlier incident where nginx died and clients fell back to plain connections would be caught by a TLS-handshake check, not by a TCP check.
+Retired 2026-11-16: HostVDS VPS (agent, SSH, nginx/Xray), Ubuntu VPS (shared), AlmaLinux cPanel server. Domain-expiry (`domain`) checks were dropped from every target; the checker still exists. Several checks were also superseded by newer ones (see `targets.yaml`, the source of truth, for the exact list).
 
 ## Architecture
 
@@ -111,7 +114,7 @@ One route, `/`, readable in 3 seconds: a banner that says "All systems operation
 
 1. **Top banner** — overall state *for the targets this user can see*, count of open incidents, last refresh time, live dot (SSE connected).
 2. **Problems strip** — only rendered when something is red/amber: target, failing check, since when, last error message, vantage points that agree.
-3. **Groups** — **Roco Broker** (client portal, rocobroker.com, roco-seo, email) is visible to both roles. **Personal & client projects** (termspace) and the HostVDS proxy VPS render only for ADMIN; the rest of **Infrastructure** (Ubuntu VPS, cPanel server) is visible to both roles. For a USER, admin-only targets are absent from the HTML and the API, not just hidden. Each target is a row: status pill, name, p95 latency, 90-day uptime bar (one cell per day, hover = %), TLS/domain days-left badges, error count.
+3. **Groups** — **Roco Broker** (client portal, rocobroker.com/.ir, blog, roco-seo, email) is visible to both roles. **Midori**, **Personal & client projects** (termspace) and **Infrastructure** (this dashboard) render only for ADMIN. For a USER, admin-only targets are absent from the HTML and the API, not just hidden. Each target is a row: status pill, name, p95 latency, 90-day uptime bar (one cell per day, hover = %), TLS/domain days-left badges, error count.
 4. **Row expand** — per-check list, 24 h latency sparkline per vantage, last 10 results, latest errors from `/health` and agent log tails, host metrics for VPS rows (disk/RAM bars, systemd units, containers).
 5. **Incidents tab** — table, newest first: target, opened, duration, cause, resolved; filtered by role like everything else.
 
@@ -123,6 +126,9 @@ An incident opens only when a check fails **3 consecutive times from a majority 
 
 - **State machine per check**: `up → suspect → down → recovering → up`; `degraded` is tracked separately and only alerts if it lasts > 15 min.
 - **Vantage disagreement** (one says down, other says up) → show as `degraded` with label "regional", no page. Logged so you can see patterns like `.ir` endpoints unreachable from outside.
+- **One message per host.** Incidents on targets that share a `host` in `targets.yaml` go out as a single Telegram message per user. Later outages on the same host edit that message, and recoveries re-render it. A user only ever sees the targets they may see, and no host or IP is shown in messages.
+- **Removing a target while it is down.** `syncTargets` closes the open incidents and drops the heartbeat of any check that leaves the registry (those tables have no FK to `checks`). The alert message is edited to "removed from monitoring" using the target name saved with it (`alert_messages.target_name`, migration 0004).
+- **Core offline.** See "Constraint": results are dropped while core has no connectivity, and the external watchdog (Healthchecks.io, Telegram) reports silence.
 - **Channels**: Telegram bot is primary (open, resolve, daily 09:00 digest of TLS/domain expiries and degraded items); email via SMTP only as fallback when Telegram delivery fails.
 - **Routing by role**: each user links their Telegram chat once (`/start <code>` from their profile page). ADMIN gets every alert; USER gets alerts for the targets they can see.
 - **Dedup & mute**: one message per incident (edited in place on resolve), `maintenance` windows in YAML, `/mute <target> 2h` command (ADMIN only).
