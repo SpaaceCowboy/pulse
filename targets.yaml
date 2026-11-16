@@ -1,9 +1,8 @@
 # Pulse target registry — source of truth, synced to Postgres on boot.
 # No secrets here (tokens/passwords live in .env). Every target MUST set `audience: roco | admin`.
-# URLs/keywords are the starting list from docs/PLAN.md — confirm before Phase 1.
-# Vantage names: core = 185.92.183.106 (main stack), hostvds = 95.182.96.28 (probe-only).
-# A check with no `vantage` runs on core only. `vantage: [hostvds]` means core never runs it, so until the probe
-# is deployed that check produces no results at all (and can neither open nor keep an incident open).
+# All checks run from core (185.92.183.106). There is no second vantage; the probe/ingest code stays but is unused.
+# Check ids are positional (`<target>:<index>:<kind>`): reordering or removing a check gives it a new id and drops
+# its history (and orphans a heartbeat's push token).
 
 targets:
   - id: roco-client-portal
@@ -14,12 +13,9 @@ targets:
     tags: [roco, portal]
     checks:
       - kind: http
-        vantage: [core, hostvds]
         config: { url: "https://client.rocobroker.ir/", keyword: "login" }
       - kind: tls
         config: { host: client.rocobroker.ir, port: 443 }
-      - kind: domain
-        config: { domain: rocobroker.ir }
 
   - id: roco-main-site
     name: rocobroker.com (main site)
@@ -29,20 +25,41 @@ targets:
     tags: [roco, website]
     checks:
       - kind: http
-        vantage: [core, hostvds]
         config: { url: "https://rocobroker.com/", expect_status: 200 }
       - kind: tls
         config: { host: rocobroker.com, port: 443 }
-      - kind: domain
-        config: { domain: rocobroker.com }
       - kind: dns
         config: { name: rocobroker.com, type: A }
+
+  - id: roco-ir-site
+    name: rocobroker.ir
+    group: Roco Broker
+    audience: roco
+    host: 89.46.217.221
+    tags: [roco, website]
+    checks:
+      - kind: http
+        config: { url: "https://rocobroker.ir/", keyword: "RocoBroker" }
+      - kind: tls
+        config: { host: rocobroker.ir, port: 443 }
+
+  - id: roco-blog
+    name: blog.rocobroker.com
+    group: Roco Broker
+    audience: roco
+    host: 65.109.215.58
+    tags: [roco, website, wordpress]
+    checks:
+      - kind: http
+        config: { url: "https://blog.rocobroker.com/", keyword: "ROCO Broker" }
+      - kind: tls
+        config: { host: blog.rocobroker.com, port: 443 }
 
   - id: roco-seo-agents
     name: roco-seo agents
     group: Roco Broker
     audience: roco
-    host: 31.57.24.70
+    host: 65.109.212.227
     tags: [roco, agents]
     note: |
       TODO (set at the end, once the API is exposed publicly): add http checks for
@@ -55,29 +72,26 @@ targets:
         config: { grace_s: 90000 }
 
   - id: roco-email
-    name: Roco email (SPF/DKIM/DMARC, SMTP)
+    name: Roco email (SPF/DMARC)
     group: Roco Broker
     audience: roco
     tags: [roco, email]
-    note: LiquidWeb + providers. Expected DNS values and mail hostname to be confirmed.
+    note: |
+      LiquidWeb + providers. SMTP is not checked: outbound 25/465/587 to mail.rocobroker.com time out from core
+      (verified 2026-11-01) and there is no second vantage.
     checks:
       - kind: dns
         config: { name: rocobroker.com, type: TXT, contains: "v=spf1" }
       - kind: dns
         config: { name: _dmarc.rocobroker.com, type: TXT, contains: "v=DMARC1" }
-      - kind: smtp
-        # Outbound 25/465/587 to mail.rocobroker.com all time out from the core VPS (verified 2026-11-01), so this
-        # check can only ever pass from the second vantage. It produces no results until the probe is deployed.
-        vantage: [hostvds]
-        config: { host: mail.rocobroker.com, port: 465, secure: true }
 
   - id: termspace
     name: termspace.dev
     group: Personal & client projects
     audience: admin
+    host: 95.182.96.28
     tags: [personal, nextjs]
     note: |
-      Live at https://termspace.dev (VPS 31.57.92.100), moved off the retired sslip.io preview on 2026-11-01.
       Arabic (/ar) is not published yet and English (/en) currently 404s, so neither is checked on purpose.
       Re-add them when they return 200.
     checks:
@@ -88,51 +102,39 @@ targets:
       - kind: tls
         config: { host: termspace.dev, port: 443 }
 
-  - id: hostvds-vps
-    name: HostVDS VPS
-    group: Infrastructure
+  - id: midori-backend
+    name: Midori backend (13.140.89.146)
+    group: Midori
     audience: admin
-    host: 95.182.96.28
-    tags: [vps, debian, proxy]
-    note: Checks nginx + TLS on the WebSocket path, not just the port (earlier nginx incident).
+    host: 13.140.89.146
+    tags: [midori, api]
+    note: |
+      The game client connects straight to the IP over HTTPS:443 (no DNS, no Cloudflare).
+      Let's Encrypt short-lived IP certificate (~6 days), hence warn_days 2 on the tls check.
     checks:
-      - kind: tcp
-        config: { host: 95.182.96.28, port: 22 }
-      - kind: agent
-        config: { units: [nginx, xray] }
+      - kind: json # default assertion: $.status == "ok"
+        config: { url: "https://13.140.89.146/health" }
+      - kind: tls
+        config: { host: 13.140.89.146, port: 443, warn_days: 2 }
 
-  - id: ubuntu-vps-shared
-    name: Ubuntu VPS (shared)
-    group: Infrastructure
-    audience: roco
-    tags: [vps, ubuntu, docker]
-    note: Shared with teammate; host/IP to be confirmed.
-    checks:
-      - kind: agent
-        config: { containers: true }
-
-  - id: cpanel-alma
-    name: AlmaLinux cPanel server
-    group: Infrastructure
-    audience: roco
-    tags: [cpanel, almalinux]
-    note: WHM on host1.rocobroker.com:2087 (same IP as mail.rocobroker.com).
+  - id: midori-cp
+    name: cp.midoripuzzle.com
+    group: Midori
+    audience: admin
+    host: 13.140.89.146
+    tags: [midori, admin-panel]
     checks:
       - kind: http
-        config: { url: "https://host1.rocobroker.com:2087/" }
+        config: { url: "https://cp.midoripuzzle.com/", keyword: "Midori Control" }
       - kind: tls
-        config: { host: host1.rocobroker.com, port: 2087 }
+        config: { host: cp.midoripuzzle.com, port: 443 }
 
-  - id: pulse-dashboard
-    name: pulse.termspace.dev (this dashboard)
-    group: Infrastructure
+  - id: midoripuzzle-site
+    name: midoripuzzle.com (Vercel)
+    group: Midori
     audience: admin
-    tags: [pulse, self]
-    note: |
-      Self-monitoring. The watchdog answers "is Pulse alive at all"; these checks catch what it cannot see --
-      Caddy, DNS and certificate problems, and an app that starts answering wrong on its own domain.
+    tags: [midori, website, vercel]
+    note: Hosted on Vercel. No tls check; Vercel renews certs and the http check fails on a bad cert anyway.
     checks:
-      - kind: json
-        config: { url: "https://pulse.termspace.dev/api/healthz" }
-      - kind: tls
-        config: { host: pulse.termspace.dev, port: 443 }
+      - kind: http # follows the 308 to www
+        config: { url: "https://midoripuzzle.com/", keyword: "Midori" }
