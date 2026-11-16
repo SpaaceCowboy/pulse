@@ -66,12 +66,12 @@ targets:
     host: 65.109.212.227
     tags: [roco, agents]
     note: |
-      TODO (set at the end, once the API is exposed publicly): add http checks for
-      GET /health (liveness, 200 if the API responds) and GET /ready (readiness, 200 when DB and queue are ready).
-      Base URL not decided: https://scc.rocobroker.com is the Next.js frontend and returns 404 for both.
-      One heartbeat per job, so one job dying cannot hide behind the others still pinging. Each job POSTs its own
-      push URL after a successful run, and POSTs it with ?status=fail&message=... when it errors (alerts at once).
-      A heartbeat only starts counting once its token exists (`pnpm heartbeat create <checkId>`).
+      Heartbeats: one per job (gsc daily 04:15 UTC, ga4 daily 04:45 UTC, pagespeed Mon 05:15 UTC). Wired and pinging
+      since 2026-11-16. A job POSTs ?status=fail&message=... itself on a final failure (alerts at once), so one job
+      dying cannot hide behind the others still pinging.
+      TODO: http checks for the API's GET /health ({"status":"ok"}) and GET /ready ({"status":"ready"}, so it needs
+      `assertions: [{ path: "$.status", equals: "ready" }]`). The API is private (http://api:4000 inside Compose) and
+      scc.rocobroker.com returns 404 for both, so Pulse cannot reach them until nginx exposes them (decision pending).
     checks:
       - kind: heartbeat # daily 04:15 UTC, grace 25 h
         id: gsc
