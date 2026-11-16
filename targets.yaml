@@ -26,7 +26,7 @@ targets:
     tags: [roco, website]
     checks:
       - kind: http
-        config: { url: "https://rocobroker.com/", expect_status: 200 }
+        config: { url: "https://rocobroker.com/", keyword: "ROCO Broker" }
       - kind: tls
         config: { host: rocobroker.com, port: 443 }
       - kind: dns
@@ -55,6 +55,9 @@ targets:
         config: { url: "https://blog.rocobroker.com/", keyword: "ROCO Broker" }
       - kind: tls
         config: { host: blog.rocobroker.com, port: 443 }
+      - kind: json # boots WordPress and needs its DB; a cached homepage can still return 200 with both dead
+        id: wp-json
+        config: { url: "https://blog.rocobroker.com/wp-json/", assertions: [{ path: "$.name", exists: true }] }
 
   - id: roco-seo-agents
     name: roco-seo agents
@@ -66,14 +69,22 @@ targets:
       TODO (set at the end, once the API is exposed publicly): add http checks for
       GET /health (liveness, 200 if the API responds) and GET /ready (readiness, 200 when DB and queue are ready).
       Base URL not decided: https://scc.rocobroker.com is the Next.js frontend and returns 404 for both.
-      Heartbeat: the scheduled jobs (daily GSC 04:15 UTC, GA4 04:45 UTC, weekly PageSpeed Mon 05:15 UTC) must POST
-      the push URL after a successful run. Grace is 25 h so a late run is not an outage.
+      One heartbeat per job, so one job dying cannot hide behind the others still pinging. Each job POSTs its own
+      push URL after a successful run, and POSTs it with ?status=fail&message=... when it errors (alerts at once).
+      A heartbeat only starts counting once its token exists (`pnpm heartbeat create <checkId>`).
     checks:
-      - kind: heartbeat
+      - kind: heartbeat # daily 04:15 UTC, grace 25 h
+        id: gsc
         config: { grace_s: 90000 }
+      - kind: heartbeat # daily 04:45 UTC, grace 25 h
+        id: ga4
+        config: { grace_s: 90000 }
+      - kind: heartbeat # weekly Mon 05:15 UTC, grace 8 d
+        id: pagespeed
+        config: { grace_s: 691200 }
 
   - id: roco-email
-    name: Roco email (SPF/DMARC)
+    name: Roco email (SPF/DKIM/DMARC/MX)
     group: Roco Broker
     audience: roco
     tags: [roco, email]
@@ -85,6 +96,15 @@ targets:
         config: { name: rocobroker.com, type: TXT, contains: "v=spf1" }
       - kind: dns
         config: { name: _dmarc.rocobroker.com, type: TXT, contains: "v=DMARC1" }
+      - kind: dns
+        id: mx
+        config: { name: rocobroker.com, type: MX, contains: "mail.rocobroker.com" }
+      - kind: dns # both selectors were found published on 2026-11-16; drop whichever you no longer send with
+        id: dkim-default
+        config: { name: default._domainkey.rocobroker.com, type: TXT, contains: "p=" }
+      - kind: dns
+        id: dkim-k1
+        config: { name: k1._domainkey.rocobroker.com, type: TXT, contains: "p=" }
 
   - id: termspace
     name: termspace.dev
