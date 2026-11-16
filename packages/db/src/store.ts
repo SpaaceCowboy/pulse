@@ -1,7 +1,7 @@
 // Phase 2 storage: target sync, raw results, incidents, month partitions, hourly rollup.
-import { and, eq, isNull, notInArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm'
 import type { createDb } from './client'
-import { checkResults, checks, incidents, targets } from './schema'
+import { checkResults, checks, heartbeats, incidents, targets } from './schema'
 
 export type Db = ReturnType<typeof createDb>['db']
 type Status = 'up' | 'degraded' | 'down'
@@ -29,6 +29,17 @@ export interface SyncTarget {
 /** Mirror the registry into Postgres; rows no longer in the registry are removed. */
 export async function syncTargets(db: Db, list: SyncTarget[]): Promise<void> {
   await db.transaction(async (tx) => {
+    // incidents and heartbeats have no FK to checks, so deleting a check below would leave an incident open
+    // forever and its heartbeat evaluated for nothing. Close/drop them first.
+    const keep = list.flatMap((t) => t.checks.map((c) => c.id))
+    const gone = (await tx.select({ id: checks.id }).from(checks).where(keep.length ? notInArray(checks.id, keep) : undefined)).map(
+      (r) => r.id,
+    )
+    if (gone.length) {
+      await tx.update(incidents).set({ resolvedAt: new Date() }).where(and(inArray(incidents.checkId, gone), isNull(incidents.resolvedAt)))
+      await tx.delete(heartbeats).where(inArray(heartbeats.checkId, gone))
+    }
+
     const targetIds = list.map((t) => t.id)
     if (targetIds.length === 0) {
       await tx.delete(targets)

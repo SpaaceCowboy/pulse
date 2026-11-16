@@ -16,6 +16,7 @@ import {
 } from './store'
 import { createTestDb, TEST_DATABASE_URL } from './testing'
 import { sql } from 'drizzle-orm'
+import { upsertHeartbeat } from './alerts'
 import { claimTotpStep, createUser, findUserByEmail, findUserByTokenHash, updateUser } from './users'
 
 const NOW = new Date('2026-10-29T12:30:00Z')
@@ -96,6 +97,31 @@ describe.skipIf(!TEST_DATABASE_URL)('postgres', () => {
     await syncTargets(t.db, [mk('a', ['a:0:http'])])
     expect((await t.pool.query('SELECT id FROM checks ORDER BY id')).rows.map((r) => r.id)).toEqual(['a:0:http'])
     expect((await t.pool.query('SELECT id FROM targets')).rows.map((r) => r.id)).toEqual(['a'])
+  })
+
+  it('closes incidents and drops heartbeats of checks that leave the registry', async () => {
+    const mk = (id: string, checkIds: string[]): SyncTarget => ({
+      id,
+      name: id,
+      group: 'g',
+      audience: 'roco',
+      tags: [],
+      env: 'production',
+      checks: checkIds.map((c) => ({ id: c, kind: 'http', config: { url: 'x' }, intervalS: 60, timeoutMs: 5000, vantage: ['core'] })),
+    })
+    const at = new Date('2026-10-29T10:00:00Z')
+    await syncTargets(t.db, [mk('a', ['a:0:http', 'a:hb']), mk('b', ['b:0:http'])])
+    await upsertHeartbeat(t.db, 'a:hb', 'hash-a', 60)
+    for (const c of ['a:0:http', 'a:hb', 'b:0:http']) await openIncident(t.db, { checkId: c, openedAt: at })
+
+    await syncTargets(t.db, [mk('a', ['a:0:http'])]) // drops check a:hb and the whole target b
+    expect(await hasOpenIncident(t.db, 'a:0:http')).toBe(true) // kept check untouched
+    expect(await hasOpenIncident(t.db, 'a:hb')).toBe(false)
+    expect(await hasOpenIncident(t.db, 'b:0:http')).toBe(false)
+    expect((await t.pool.query('SELECT count(*)::int AS n FROM heartbeats')).rows[0].n).toBe(0)
+
+    await syncTargets(t.db, [mk('a', [])]) // last check removed from a kept target
+    expect(await hasOpenIncident(t.db, 'a:0:http')).toBe(false)
   })
 
   it('allows only one open incident per check', async () => {
